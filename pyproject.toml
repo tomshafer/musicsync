@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "musicsync"
-version = "0.1.0"
+version = "0.1.0.9000"
 description = ""
 authors = ["Tom Shafer <tom@tshafer.com>"]
 license = "MIT"
