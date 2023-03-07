@@ -16,17 +16,19 @@ T = TypeVar("T")
 
 
 def wrap_tqdm(iter: T, *args, **kwargs) -> T:
+    """Use tqdm if not in debug mode."""
     if log.level < logging.INFO:
         return iter
     return tqdm(iter, *args, **kwargs)
 
 
 def norm(s: str) -> str:
+    """Normalize unicode strings to handle FAT32 issues."""
     return unicodedata.normalize("NFKC", s)
 
 
 def get_playlist_files(playlist: str) -> list[str]:
-    """Collect all files from a playlist."""
+    """Collect all files from a Music playlist with AppleScript."""
     script = f"""
         tell application "Music"
             set thePlaylist to the playlist named "{playlist}"
@@ -44,6 +46,7 @@ def get_playlist_files(playlist: str) -> list[str]:
 
 
 def find_root_directory(files: list[str]) -> str:
+    """Find a root directory (common prefix) in a list of paths."""
     prefix = str(max(files, key=len))
     while len(prefix) > 0:
         if all(file.startswith(prefix) for file in files):
@@ -54,6 +57,8 @@ def find_root_directory(files: list[str]) -> str:
 
 
 class directory:
+    """Representation of a directory with files and subdirectories."""
+
     def __init__(self) -> None:
         self.dirs: dict[str, directory] = {}
         self.files: list[str] = []
@@ -65,12 +70,14 @@ class directory:
         return str(self)
 
     def count_dirs(self) -> int:
+        """Recursively count subdirectories w/caching."""
         if not hasattr(self, "_num_dirs"):
             n = len(self.dirs) + sum(d.count_dirs() for d in self.dirs.values())
             self._num_dirs = n
         return self._num_dirs
 
     def count_files(self) -> int:
+        """Recursively count files w/caching."""
         if not hasattr(self, "_num_files"):
             n = len(self.files) + sum(d.count_files() for d in self.dirs.values())
             self._num_files = n
@@ -78,6 +85,7 @@ class directory:
 
 
 def build_playlist_tree(songs: list[str], root: str) -> directory:
+    """Construct a directory tree of all files in the playlist."""
     log.info("Building playlist song tree")
 
     tree = directory()
@@ -97,13 +105,13 @@ def build_playlist_tree(songs: list[str], root: str) -> directory:
 
 
 def cleanup_volume(volume: str, tree: directory) -> None:
+    """Delete files and directories not appearing in the playlist."""
     for pwd, _, files in wrap_tqdm(os.walk(volume), desc="  Processing", leave=False):
         relpath = os.path.relpath(pwd, volume)
 
         # Delete high-level directories if they don't appear
         truncated = False
         ptr = tree
-
         if relpath != ".":
             dir_parts = relpath.split(os.path.sep)
             for d in dir_parts:
@@ -115,6 +123,7 @@ def cleanup_volume(volume: str, tree: directory) -> None:
                     break
                 ptr = ptr.dirs[d_norm]
 
+        # No files to delete (below) if the directory was removed
         if truncated:
             continue
 
@@ -125,26 +134,31 @@ def cleanup_volume(volume: str, tree: directory) -> None:
             sp.run(["rm", path])
 
 
-def copy_structure(tree: directory, ptr: str, root: str):
-    COPY = ["ditto", "--nocache", "--noextattr", "--noqtn", "--norsrc"]
-
+def copy_structure(tree: directory, ptr: str, root: str, base: str | None = None):
+    """Recursively synchronize the playlist tree into a destination."""
+    base = ptr if base is None else base
     for subdir in tree.dirs:
         new_ptr = norm(os.path.join(ptr, subdir))
         new_root = norm(os.path.join(root, subdir))
         if not os.path.isdir(new_ptr):
             log.debug(f'  Creating directory "{new_ptr}"')
             sp.run(["mkdir", "-p", new_ptr])
-        copy_structure(tree.dirs[subdir], new_ptr, new_root)
+        copy_structure(tree.dirs[subdir], new_ptr, new_root, base)
 
     ptr_n = norm(ptr)
-    for file in wrap_tqdm(tree.files, desc="  " + ptr, leave=False):
+    tqdm_desc = f"  {os.path.relpath(ptr, base)}"
+    ditto = ["ditto", "--nocache", "--noextattr", "--noqtn", "--norsrc"]
+
+    for file in wrap_tqdm(tree.files, desc=tqdm_desc, leave=False):
         src = os.path.join(root, file)
         dst = norm(os.path.join(ptr_n, file))  # Copy to a normalized path
 
+        # Only copy if the destination file is not there or is wrong size.
+        # This gets around timestamp issues with FAT32 (same as w/rsync)
         src_st = os.stat(src)
         if not os.path.exists(dst) or src_st.st_size != os.stat(dst).st_size:
             log.debug(f'  dittoing file "{src}"')
-            sp.run(COPY + [src, ptr_n])
+            sp.run(ditto + [src, ptr_n])
 
 
 @c.command()
