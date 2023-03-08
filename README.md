@@ -1,4 +1,4 @@
-# Synchronize Apple Music to an External Volume
+# Synchronize an Apple Music Playlist to an External Volume
 
 ``` bash
 $ musicsync --playlist "Selected for Car" /Volumes/UNTITLED
@@ -19,7 +19,6 @@ Copying new files from "Selected for Car" to "/Volumes/UNTITLED/"
 $ git clone git@github.com:tomshafer/musicsync.git
 $ pip install ./musicsync
 ```
-
 
 ## Usage
 

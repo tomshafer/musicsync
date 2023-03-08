@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "musicsync"
-version = "0.1.0.9000"
-description = ""
+version = "0.1.1"
+description = "Synchronize an Apple Music playlist to an external volume"
 authors = ["Tom Shafer <tom@tshafer.com>"]
 license = "MIT"
 readme = "README.md"
